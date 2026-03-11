@@ -8,4 +8,11 @@ export const API_ROUTES = {
     GET_ALL: "/list",
     GET_BY_SN: "/:sn",
   },
+  UPLOADED_FILE: {
+    BASE: `${apiPrefix}/uploaded-files`,
+    UPLOAD: "/upload",
+    GET_ALL: "/list",
+    GET_BY_SN: "/:sn",
+    DELETE_BY_SN: "/:sn",
+  },
 };

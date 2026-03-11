@@ -3,8 +3,9 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 
-import { API_ROUTES } from "./apiCollectionsBackend.js";
+import { API_ROUTES } from "./api/apiCollectionsBackend.js";
 import { router as paperRoutes } from "./api/papers/route.js";
+import { router as uploadedFileRoutes } from "./api/uploadedFiles/route.js";
 
 dotenv.config();
 
@@ -17,6 +18,7 @@ app.use(express.json());
 
 // --- 2. 業務路由掛載 ---
 app.use(API_ROUTES.PAPER.BASE, paperRoutes);
+app.use(API_ROUTES.UPLOADED_FILE.BASE, uploadedFileRoutes);
 
 // --- 3. MongoDB 連線 ---
 const uri = process.env.MONGODB_URI || "";
