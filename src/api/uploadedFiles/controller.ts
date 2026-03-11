@@ -35,9 +35,14 @@ export const uploadedFileController = {
   upload: handleControllerRequest(
     "Uploading file",
     async (req: MulterRequest, res: Response) => {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file detected" });
-      }
+      const file = req.file;
+      if (!file) return res.status(400).json({ message: "No file detected" });
+
+      // 手動將 Latin1 編碼轉回 UTF-8
+      // 因為 Multer 內部使用 'latin1' 讀取，導致中文變亂碼
+      const correctName = Buffer.from(file.originalname, "latin1").toString(
+        "utf8",
+      );
 
       // 自動計算下一個 fileSN (取最大值 + 1)
       const lastFile = await UploadedFileModel.findOne().sort({ fileSN: -1 });
@@ -45,7 +50,7 @@ export const uploadedFileController = {
 
       const fileData = new UploadedFileModel({
         fileSN: nextSN,
-        originalName: req.file.originalname,
+        originalName: correctName,
         fileName: req.file.filename,
         path: req.file.path,
         size: req.file.size,
@@ -64,7 +69,9 @@ export const uploadedFileController = {
       if (isNaN(snNumber))
         return res.status(400).json({ message: "Invalid SN" });
 
-      const data = await UploadedFileModel.findOneAndDelete({ fileSN: snNumber });
+      const data = await UploadedFileModel.findOneAndDelete({
+        fileSN: snNumber,
+      });
 
       if (!data) {
         return res.status(404).json({ message: "File not found" });
