@@ -4,11 +4,11 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "rootDir": "./src", // 建議開啟，確保 dist 結構乾淨
+    "rootDir": "./src",
     "outDir": "./dist",
 
-    "module": "esnext",
-    "moduleResolution": "bundler", // 如果你使用 tsx 或編譯器，這沒問題
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "target": "esnext",
     "lib": ["esnext"],
     "types": ["node"],
