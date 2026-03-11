@@ -19,10 +19,11 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    // 檔名規則：時間戳記-隨機數.副檔名
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
-  },
+    // 將 latin1 轉回 utf-8 解決亂碼
+    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + '-' + originalName);
+  }
 });
 
 const upload = multer({
