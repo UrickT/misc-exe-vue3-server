@@ -38,11 +38,13 @@ export const uploadedFileController = {
       const file = req.file;
       if (!file) return res.status(400).json({ message: "No file detected" });
 
-      // 手動將 Latin1 編碼轉回 UTF-8
-      // 因為 Multer 內部使用 'latin1' 讀取，導致中文變亂碼
+      // 解決中文亂碼：Multer 預設用 latin1，手動轉回 UTF-8
       const correctName = Buffer.from(file.originalname, "latin1").toString(
         "utf8",
       );
+
+      // 將 Windows 路徑反斜線 "\" 改為正斜線 "/"：這樣前端拼接 URL 才不會出錯 (例如 uploads\123.jpg -> uploads/123.jpg)
+      const normalizedPath = file.path.replace(/\\/g, "/");
 
       // 自動計算下一個 fileSN (取最大值 + 1)
       const lastFile = await UploadedFileModel.findOne().sort({ fileSN: -1 });
@@ -52,7 +54,7 @@ export const uploadedFileController = {
         fileSN: nextSN,
         originalName: correctName,
         fileName: req.file.filename,
-        path: req.file.path,
+        path: normalizedPath,
         size: req.file.size,
         mimetype: req.file.mimetype,
       });

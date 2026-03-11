@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import path from 'path';
 import dotenv from "dotenv";
 
 import { API_ROUTES } from "./api/apiCollectionsBackend.js";
@@ -17,6 +18,8 @@ app.use(cors());
 app.use(express.json());
 
 // --- 2. 業務路由掛載 ---
+// 靜態資源掛載 (最重要的一行)
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use(API_ROUTES.PAPER.BASE, paperRoutes);
 app.use(API_ROUTES.UPLOADED_FILE.BASE, uploadedFileRoutes);
 
