@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { API_ROUTES } from "@/apiCollectionsBackend.js"; 
-import { paperController } from "@/api/papers/controller.js";
+import { API_ROUTES } from "../../apiCollectionsBackend.js"; 
+import { paperController } from "./controller.js";
 
 const router: Router = Router();
 

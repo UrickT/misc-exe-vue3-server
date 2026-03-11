@@ -3,13 +3,13 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 
-import { API_ROUTES } from "@/apiCollectionsBackend.js";
-import { router as paperRoutes } from "@/api/papers/route.js";
+import { API_ROUTES } from "./apiCollectionsBackend.js";
+import { router as paperRoutes } from "./api/papers/route.js";
 
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = Number(process.env.PORT) || 8201;
 
 // --- 1. 基礎 Middleware ---
 app.use(cors());
@@ -30,6 +30,11 @@ if (uri) {
 } else {
   console.warn("⚠️ [MongoDB] No URI found in .env");
 }
+
+// app.get("/health", (req, res) => {
+//   console.log("🔔 收到請求！");
+//   res.send("PURE EXPRESS OK");
+// });
 
 // --- 4. 啟動監聽 ---
 app.listen(PORT, "0.0.0.0", () => {
