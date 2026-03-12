@@ -33,38 +33,28 @@ export const uploadedFileController = {
     return data;
   }),
 
-  // 3. 上傳檔案 (確保 PDF 存為 PDF)
+  // 3. 上傳檔案 (針對 PDF 修正路徑類型)
   upload: handleControllerRequest(
     "Uploading file to Cloudinary",
     async (req: MulterRequest, res: Response) => {
       const file = req.file;
       if (!file) return res.status(400).json({ message: "No file detected" });
 
-      // 處理中文檔名亂碼
       const correctName = Buffer.from(file.originalname, "latin1").toString(
         "utf8",
       );
 
-      // 判斷是否為 PDF
-      const isPdf =
-        correctName.toLowerCase().endsWith(".pdf") ||
-        file.mimetype === "application/pdf";
+      // 💡 1. 判斷是否為 PDF
+      const isPdf = correctName.toLowerCase().endsWith(".pdf");
 
       try {
-        console.log(
-          `🔍 [Controller] Preparing to upload ${isPdf ? "PDF" : "Image"}: ${correctName}`,
-        );
-
         const uploadResult = await cloudinary.uploader.upload(file.path, {
           folder: "misc-exe-vue3",
-          resource_type: isPdf ? "raw" : "auto",
-          use_filename: true,
-          unique_filename: true,
-          // 加入以下設定，確保檔案以「內嵌 (inline)」方式開啟而非「下載 (attachment)」
-          flags: "attachment:false",
+          // 關鍵：PDF 必須強制設為 image 類別
+          // 這樣 secure_url 就會變成 .../image/upload/... 而不是 .../raw/upload/...
+          resource_type: isPdf ? "image" : "auto",
         });
 
-        // 刪除本地暫存檔
         if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
         const lastFile = await UploadedFileModel.findOne().sort({ fileSN: -1 });
@@ -82,7 +72,6 @@ export const uploadedFileController = {
         return await fileData.save();
       } catch (error) {
         if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        console.error("❌ Cloudinary 具體錯誤:", error);
         throw error;
       }
     },
