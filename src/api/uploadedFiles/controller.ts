@@ -1,8 +1,16 @@
 import type { Request, Response } from "express";
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
 import { handleControllerRequest } from "../asyncHandler.js";
 import { UploadedFileModel } from "./model.js";
 
-// 定義 Multer Request 型別
+// Cloudinary 配置
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 interface MulterRequest extends Request {
   file?: any;
 }
@@ -10,77 +18,89 @@ interface MulterRequest extends Request {
 export const uploadedFileController = {
   // 1. 獲取所有檔案清單
   getAll: handleControllerRequest("Fetching all files", async () => {
-    // 照你的風格，按序號或日期排序
     return await UploadedFileModel.find().sort({ fileSN: -1 }).lean();
   }),
 
   // 2. 根據 fileSN 獲取單一檔案
   getBySn: handleControllerRequest("Fetching file by SN", async (req, res) => {
     const snNumber = Number(req.params.sn);
-
-    if (isNaN(snNumber)) {
-      return res.status(400).json({ message: "Invalid SN format" });
-    }
+    if (isNaN(snNumber)) return res.status(400).json({ message: "Invalid SN format" });
 
     const data = await UploadedFileModel.findOne({ fileSN: snNumber }).lean();
-
-    if (!data) {
-      return res.status(404).json({ message: "File not found" });
-    }
+    if (!data) return res.status(404).json({ message: "File not found" });
 
     return data;
   }),
 
-  // 3. 上傳檔案 (並自動處理 fileSN)
+  // 3. 上傳檔案 (整合 Cloudinary)
   upload: handleControllerRequest(
-    "Uploading file",
+    "Uploading file to Cloudinary",
     async (req: MulterRequest, res: Response) => {
       const file = req.file;
       if (!file) return res.status(400).json({ message: "No file detected" });
 
-      // 解決中文亂碼：Multer 預設用 latin1，手動轉回 UTF-8
-      const correctName = Buffer.from(file.originalname, "latin1").toString(
-        "utf8",
-      );
+      // 解決中文亂碼
+      const correctName = Buffer.from(file.originalname, "latin1").toString("utf8");
 
-      // 將 Windows 路徑反斜線 "\" 改為正斜線 "/"：這樣前端拼接 URL 才不會出錯 (例如 uploads\123.jpg -> uploads/123.jpg)
-      const normalizedPath = file.path.replace(/\\/g, "/");
+      try {
+        // A. 轉發檔案到 Cloudinary
+        const uploadResult = await cloudinary.uploader.upload(file.path, {
+          folder: "misc-exe-vue3",
+          resource_type: "auto",
+          transformation: [{ quality: "auto", fetch_format: "auto" }]
+        });
 
-      // 自動計算下一個 fileSN (取最大值 + 1)
-      const lastFile = await UploadedFileModel.findOne().sort({ fileSN: -1 });
-      const nextSN = lastFile && lastFile.fileSN ? lastFile.fileSN + 1 : 1;
+        // B. 立即刪除 Render 伺服器上的臨時暫存檔
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
 
-      const fileData = new UploadedFileModel({
-        fileSN: nextSN,
-        originalName: correctName,
-        fileName: req.file.filename,
-        path: normalizedPath,
-        size: req.file.size,
-        mimetype: req.file.mimetype,
-      });
+        // C. 自動計算下一個 fileSN
+        const lastFile = await UploadedFileModel.findOne().sort({ fileSN: -1 });
+        const nextSN = lastFile && lastFile.fileSN ? lastFile.fileSN + 1 : 1;
 
-      return await fileData.save();
-    },
+        // D. 建立資料庫記錄 (改用 Cloudinary 回傳的資料)
+        const fileData = new UploadedFileModel({
+          fileSN: nextSN,
+          originalName: correctName,
+          path: uploadResult.secure_url,    // 存入 HTTPS 網址
+          publicID: uploadResult.public_id, // 存入 Cloudinary ID
+          size: uploadResult.bytes,
+          mimetype: file.mimetype,
+        });
+
+        return await fileData.save();
+      } catch (error) {
+        // 出錯時也要嘗試清理暫存
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        throw error; // 讓 asyncHandler 捕獲錯誤
+      }
+    }
   ),
 
   // 4. 根據 SN 刪除檔案
   deleteBySn: handleControllerRequest(
-    "Deleting file by SN",
+    "Deleting file from Cloudinary and DB",
     async (req, res) => {
       const snNumber = Number(req.params.sn);
-      if (isNaN(snNumber))
-        return res.status(400).json({ message: "Invalid SN" });
+      if (isNaN(snNumber)) return res.status(400).json({ message: "Invalid SN" });
 
-      const data = await UploadedFileModel.findOneAndDelete({
-        fileSN: snNumber,
-      });
+      // 1. 先找出資料，獲取 publicID
+      const data = await UploadedFileModel.findOne({ fileSN: snNumber });
 
       if (!data) {
         return res.status(404).json({ message: "File not found" });
       }
 
-      // 這裡通常會加上 fs.unlinkSync(data.path) 來刪除實體檔案
-      return { success: true, message: `File SN:${snNumber} deleted` };
-    },
+      // 2. 從 Cloudinary 刪除實體檔案
+      if (data.publicID) {
+        await cloudinary.uploader.destroy(data.publicID);
+      }
+
+      // 3. 從 MongoDB 刪除記錄
+      await UploadedFileModel.deleteOne({ fileSN: snNumber });
+
+      return { success: true, message: `File SN:${snNumber} deleted from Cloudinary and DB` };
+    }
   ),
 };
