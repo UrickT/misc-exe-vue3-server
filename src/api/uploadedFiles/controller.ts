@@ -24,7 +24,8 @@ export const uploadedFileController = {
   // 2. 根據 fileSN 獲取單一檔案
   getBySn: handleControllerRequest("Fetching file by SN", async (req, res) => {
     const snNumber = Number(req.params.sn);
-    if (isNaN(snNumber)) return res.status(400).json({ message: "Invalid SN format" });
+    if (isNaN(snNumber))
+      return res.status(400).json({ message: "Invalid SN format" });
 
     const data = await UploadedFileModel.findOne({ fileSN: snNumber }).lean();
     if (!data) return res.status(404).json({ message: "File not found" });
@@ -32,60 +33,67 @@ export const uploadedFileController = {
     return data;
   }),
 
-  // 3. 上傳檔案 (整合 Cloudinary)
+  // 3. 上傳檔案 (確保 PDF 存為 PDF)
   upload: handleControllerRequest(
     "Uploading file to Cloudinary",
     async (req: MulterRequest, res: Response) => {
       const file = req.file;
       if (!file) return res.status(400).json({ message: "No file detected" });
 
-      // 解決中文亂碼
-      const correctName = Buffer.from(file.originalname, "latin1").toString("utf8");
+      // 處理中文檔名亂碼
+      const correctName = Buffer.from(file.originalname, "latin1").toString(
+        "utf8",
+      );
+
+      // 判斷是否為 PDF
+      const isPdf =
+        correctName.toLowerCase().endsWith(".pdf") ||
+        file.mimetype === "application/pdf";
 
       try {
-        // A. 轉發檔案到 Cloudinary
+        console.log(
+          `🔍 [Controller] Preparing to upload ${isPdf ? "PDF" : "Image"}: ${correctName}`,
+        );
+
         const uploadResult = await cloudinary.uploader.upload(file.path, {
           folder: "misc-exe-vue3",
-          resource_type: "auto",
-          transformation: [{ quality: "auto", fetch_format: "auto" }]
+          // 💡 關鍵：PDF 使用 raw 以保持純檔案格式，圖片使用 auto
+          resource_type: isPdf ? "raw" : "auto",
         });
 
-        // B. 立即刪除 Render 伺服器上的臨時暫存檔
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
+        // 刪除本地暫存檔
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
-        // C. 自動計算下一個 fileSN
         const lastFile = await UploadedFileModel.findOne().sort({ fileSN: -1 });
         const nextSN = lastFile && lastFile.fileSN ? lastFile.fileSN + 1 : 1;
 
-        // D. 建立資料庫記錄 (改用 Cloudinary 回傳的資料)
         const fileData = new UploadedFileModel({
           fileSN: nextSN,
           originalName: correctName,
-          path: uploadResult.secure_url,    // 存入 HTTPS 網址
-          publicID: uploadResult.public_id, // 存入 Cloudinary ID
+          path: uploadResult.secure_url,
+          publicID: uploadResult.public_id,
           size: uploadResult.bytes,
           mimetype: file.mimetype,
         });
 
         return await fileData.save();
       } catch (error) {
-        // 出錯時也要嘗試清理暫存
         if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        throw error; // 讓 asyncHandler 捕獲錯誤
+        console.error("❌ Cloudinary 具體錯誤:", error);
+        throw error;
       }
-    }
+    },
   ),
 
-  // 4. 根據 SN 刪除檔案
+  // 4. 根據 SN 刪除檔案 (支援 PDF 刪除)
   deleteBySn: handleControllerRequest(
     "Deleting file from Cloudinary and DB",
     async (req, res) => {
       const snNumber = Number(req.params.sn);
-      if (isNaN(snNumber)) return res.status(400).json({ message: "Invalid SN" });
+      if (isNaN(snNumber))
+        return res.status(400).json({ message: "Invalid SN" });
 
-      // 1. 先找出資料，獲取 publicID
+      // 1. 先找出資料，獲取 publicID 與類型
       const data = await UploadedFileModel.findOne({ fileSN: snNumber });
 
       if (!data) {
@@ -94,13 +102,21 @@ export const uploadedFileController = {
 
       // 2. 從 Cloudinary 刪除實體檔案
       if (data.publicID) {
-        await cloudinary.uploader.destroy(data.publicID);
+        const isPdf = data.originalName.toLowerCase().endsWith(".pdf");
+
+        // 💡 刪除 PDF (raw) 時必須指定 resource_type
+        await cloudinary.uploader.destroy(data.publicID, {
+          resource_type: isPdf ? "raw" : "image",
+        });
       }
 
       // 3. 從 MongoDB 刪除記錄
       await UploadedFileModel.deleteOne({ fileSN: snNumber });
 
-      return { success: true, message: `File SN:${snNumber} deleted from Cloudinary and DB` };
-    }
+      return {
+        success: true,
+        message: `File SN:${snNumber} deleted from Cloudinary and DB`,
+      };
+    },
   ),
 };
