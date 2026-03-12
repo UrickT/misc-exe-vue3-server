@@ -57,8 +57,11 @@ export const uploadedFileController = {
 
         const uploadResult = await cloudinary.uploader.upload(file.path, {
           folder: "misc-exe-vue3",
-          // 💡 關鍵：PDF 使用 raw 以保持純檔案格式，圖片使用 auto
           resource_type: isPdf ? "raw" : "auto",
+          use_filename: true,
+          unique_filename: true,
+          // 加入以下設定，確保檔案以「內嵌 (inline)」方式開啟而非「下載 (attachment)」
+          flags: "attachment:false",
         });
 
         // 刪除本地暫存檔
